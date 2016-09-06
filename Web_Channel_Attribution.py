@@ -221,7 +221,7 @@ def print_results(results, start_date, page_index):
       print("Deleting old table web_acquisition_channel2")
       cursor.execute("drop table if exists web_acquisition_channel2;")
       print("Creating new table \n web_acquisition_channel2 ")
-      cursor.execute("")
+      cursor.execute("create table web_acquisition_channel2( date varchar(20), channel_grouping varchar(250), source_medium varchar(250), campaign varchar(250),  social_network varchar(250), keyword varchar(1000), uid int,  users int); ")
       print("Copying Web Acquisition Channel data from S3 to  \n web_acquisition_channel2 ")
       cursor.execute("COPY web_acquisition_channel2  FROM 's3://bibusuu/Web_Acquisition_Channel/'  CREDENTIALS 'aws_access_key_id=%s;aws_secret_access_key=%s' CSV;" % (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY))
 
