@@ -57,7 +57,6 @@ from googleapiclient.errors import HttpError
 from googleapiclient import sample_tools
 from oauth2client.client import AccessTokenRefreshError
 
-
 config = configparser.ConfigParser()
 ini = config.read('conf2.ini')
 
@@ -70,174 +69,177 @@ RED_PASSWORD = config.get('Redshift Creds', 'password')
 
 
 def main(argv):
-  # Authenticate and construct service.
-  service, flags = sample_tools.init(
-      argv, 'analytics', 'v3', __doc__, __file__,
-      scope='https://www.googleapis.com/auth/analytics.readonly')
+    # Authenticate and construct service.
+    service, flags = sample_tools.init(
+        argv, 'analytics', 'v3', __doc__, __file__,
+        scope='https://www.googleapis.com/auth/analytics.readonly')
 
-  # Try to make a request to the API. Print the results or handle errors.
-  try:
-    first_profile_id = get_first_profile_id(service)
-    if not first_profile_id:
-      print('Could not find a valid profile for this user.')
-
-    else:
-
-      start_date = date(2016, 5, 1)
-      end_date = date(2016, 5, 2)
-
-      while end_date <= date.today():
-        rs = check_output(["s3cmd", "ls", "s3://bibusuu/Web_Acquisition_Channel/%s" % start_date])
-
-        if len(rs) > 1:
-            print("File Exists for %s, Skipping processing for this file" % start_date)
+    # Try to make a request to the API. Print the results or handle errors.
+    try:
+        first_profile_id = get_first_profile_id(service)
+        if not first_profile_id:
+            print('Could not find a valid profile for this user.')
 
         else:
-            page_index = 1
 
-            results = get_top_keywords(service, first_profile_id, start_date, end_date, page_index)
-            max_pages = results['totalResults']
+            start_date = date(2016, 5, 1)
+            end_date = date(2016, 5, 2)
 
-            while page_index <= max_pages:
-                print("Grabbing Acquisition data for %s to %s page %s" % (start_date, end_date, page_index))
-                results = get_top_keywords(service, first_profile_id, start_date, end_date, page_index)
-                print_results(results, start_date, page_index)
+            while end_date <= date.today():
+                rs = check_output(["s3cmd", "ls", "s3://bibusuu/Web_Acquisition_Channel/%s" % start_date])
 
-                page_index = page_index + 10000
+                if len(rs) > 1:
+                    print("File Exists for %s, Skipping processing for this file" % start_date)
 
-        start_date = start_date + timedelta(days=1)
-        end_date = end_date + timedelta(days=1)
+                else:
+                    page_index = 1
 
-  except TypeError as error:
-    # Handle errors in constructing a query.
-    print(('There was an error in constructing your query : %s' % error))
+                    results = get_top_keywords(service, first_profile_id, start_date, end_date, page_index)
+                    max_pages = results['totalResults']
 
-  except HttpError as error:
-    # Handle API errors.
-    print(('Arg, there was an API error : %s : %s' %
-           (error.resp.status, error._get_reason())))
+                    while page_index <= max_pages:
+                        print("Grabbing Acquisition data for %s to %s page %s" % (start_date, end_date, page_index))
+                        results = get_top_keywords(service, first_profile_id, start_date, end_date, page_index)
+                        print_results(results, start_date, page_index)
 
-  except AccessTokenRefreshError:
-    # Handle Auth errors.
-    print ('The credentials have been revoked or expired, please re-run '
-           'the application to re-authorize')
+                        page_index = page_index + 10000
+
+                start_date = start_date + timedelta(days=1)
+                end_date = end_date + timedelta(days=1)
+
+            import_redshift()
+
+    except TypeError as error:
+        # Handle errors in constructing a query.
+        print(('There was an error in constructing your query : %s' % error))
+
+    except HttpError as error:
+        # Handle API errors.
+        print(('Arg, there was an API error : %s : %s' % (error.resp.status, error._get_reason())))
+
+    except AccessTokenRefreshError:
+        # Handle Auth errors.
+        print('The credentials have been revoked or expired, please re-run ' 'the application to re-authorize')
 
 
 def get_first_profile_id(service):
-  """Traverses Management API to return the first profile id.
-  This first queries the Accounts collection to get the first account ID.
-  This ID is used to query the Webproperties collection to retrieve the first
-  webproperty ID. And both account and webproperty IDs are used to query the
-  Profile collection to get the first profile id.
-  Args:
-    service: The service object built by the Google API Python client library.
-  Returns:
-    A string with the first profile ID. None if a user does not have any
-    accounts, webproperties, or profiles.
-  """
+    """Traverses Management API to return the first profile id.
+    This first queries the Accounts collection to get the first account ID.
+    This ID is used to query the Webproperties collection to retrieve the first
+    webproperty ID. And both account and webproperty IDs are used to query the
+    Profile collection to get the first profile id.
+    Args:
+      service: The service object built by the Google API Python client library.
+    Returns:
+      A string with the first profile ID. None if a user does not have any
+      accounts, webproperties, or profiles.
+    """
 
-  accounts = service.management().accounts().list().execute()
+    accounts = service.management().accounts().list().execute()
 
-  if accounts.get('items'):
-    firstAccountId = accounts.get('items')[0].get('id')
-    webproperties = service.management().webproperties().list(
-        accountId=firstAccountId).execute()
+    if accounts.get('items'):
+        firstAccountId = accounts.get('items')[0].get('id')
+        webproperties = service.management().webproperties().list(
+            accountId=firstAccountId).execute()
 
-    if webproperties.get('items'):
-      firstWebpropertyId = webproperties.get('items')[0].get('id')
-      profiles = service.management().profiles().list(
-          accountId=firstAccountId,
-          webPropertyId=firstWebpropertyId).execute()
+        if webproperties.get('items'):
+            firstWebpropertyId = webproperties.get('items')[0].get('id')
+            profiles = service.management().profiles().list(
+                accountId=firstAccountId,
+                webPropertyId=firstWebpropertyId).execute()
 
-      if profiles.get('items'):
-        return profiles.get('items')[0].get('id')
+            if profiles.get('items'):
+                return profiles.get('items')[0].get('id')
 
-  return None
+    return None
 
 
 def get_top_keywords(service, profile_id, start_date, end_date, page_index):
+    """Executes and returns data from the Core Reporting API.
+    This queries the API for the top 25 organic search terms by visits.
+    Args:
+      service: The service object built by the Google API Python client library.
+      profile_id: String The profile ID from which to retrieve analytics data.
+      start_date: the dat to start the report from.
+      end_date: The day to end the report from
+      page_index: Get even more results
+    Returns:
+      The response returned from the Core Reporting API.
+    """
 
-  """Executes and returns data from the Core Reporting API.
-  This queries the API for the top 25 organic search terms by visits.
-  Args:
-    service: The service object built by the Google API Python client library.
-    profile_id: String The profile ID from which to retrieve analytics data.
-    start_date: the dat to start the report from.
-    end_date: The day to end the report from
-    page_index: Get even more results
-  Returns:
-    The response returned from the Core Reporting API.
-  """
-
-  return service.data().ga().get(
-      ids='ga:' + profile_id,
-      start_date='%s' % start_date,
-      end_date='%s' % end_date,
-      metrics='ga:users',
-      dimensions='ga:date,ga:channelGrouping,ga:sourceMedium,ga:campaign,ga:socialNetwork,ga:keyword,ga:dimension2',
-      #sort='-ga:visits',
-      filters='ga:channelGrouping!=Direct',
-      start_index='%s' % page_index,
-      max_results='1000000').execute()
+    return service.data().ga().get(
+        ids='ga:' + profile_id,
+        start_date='%s' % start_date,
+        end_date='%s' % end_date,
+        metrics='ga:users',
+        dimensions='ga:date,ga:channelGrouping,ga:sourceMedium,ga:campaign,ga:socialNetwork,ga:keyword,ga:dimension2',
+        # sort='-ga:visits',
+        filters='ga:channelGrouping!=Direct',
+        start_index='%s' % page_index,
+        max_results='1000000').execute()
 
 
 def print_results(results, start_date, page_index):
-  """Prints out the results.
-  This prints out the profile name, the column headers, and all the rows of
-  data.
-  Args:
-    results: The response returned from the Core Reporting API.
-    start_date: the date to put on the fullname when it is written down
-    page_index: add more stuff to the day
-  """
+    """Prints out the results.
+    This prints out the profile name, the column headers, and all the rows of
+    data.
+    Args:
+      results: The response returned from the Core Reporting API.
+      start_date: the date to put on the fullname when it is written down
+      page_index: add more stuff to the day
+    """
 
-  # print('Profile Name: %s' % results.get('profileInfo').get('profileName'))
+    # print('Profile Name: %s' % results.get('profileInfo').get('profileName'))
 
-  # Print header.
-  if results.get('rows', []):
-      with open('Web_Channel_Attribution_%s_%s.csv' % (start_date, page_index), 'wb') as csvfile:
+    # Print header.
+    if results.get('rows', []):
+        with open('Web_Channel_Attribution_%s_%s.csv' % (start_date, page_index), 'wb') as csvfile:
 
-          spamwriter = csv.writer(csvfile, delimiter=',', quotechar='|')
+            spamwriter = csv.writer(csvfile, delimiter='\t', quoting=csv.QUOTE_ALL)
 
-          for row in results.get('rows'):
-              output = []
-              for cell in row:
-                  output.append('%s' % cell)
-              spamwriter.writerow([s.encode('ascii', 'ignore') for s in output])
+            for row in results.get('rows'):
+                output = []
+                for cell in row:
+                    output.append('%s' % cell)
+                spamwriter.writerow([s.encode('ascii', 'ignore') for s in output])
 
+        print('Uploading %s page %s to S3' % (start_date, page_index))
+        call(["s3cmd", "put", 'Web_Channel_Attribution_%s_%s.csv' % (start_date, page_index),"s3://bibusuu/Web_Acquisition_Channel/%s/Web_Channel_Attribution_%s_%s.csv" % (start_date, start_date, page_index)])
+        os.remove('Web_Channel_Attribution_%s_%s.csv' % (start_date, page_index))
 
-      print('Uploading %s page %s to S3' % (start_date, page_index))
-      call(["s3cmd", "put", 'Web_Channel_Attribution_%s_%s.csv' % (start_date, page_index), "s3://bibusuu/Web_Acquisition_Channel/%s/Web_Channel_Attribution_%s_%s.csv" % (start_date, start_date, page_index)])
-      os.remove('Web_Channel_Attribution_%s_%s.csv' % (start_date, page_index))
-
-      conn_string = "dbname=%s port=%s user=%s password=%s host=%s" % (
-      RED_USER, RED_PORT, RED_USER, RED_PASSWORD, RED_HOST)
-      print("Connecting to database\n        ->%s" % (conn_string))
-      conn = psycopg2.connect(conn_string)
-
-      cursor = conn.cursor()
-      # Update the redshift table with the new results
-
-      print("Deleting old table web_acquisition_channel2")
-      cursor.execute("drop table if exists web_acquisition_channel2;")
-      print("Creating new table \n web_acquisition_channel2 ")
-      cursor.execute("create table web_acquisition_channel2( date varchar(20), channel_grouping varchar(250), source_medium varchar(250), campaign varchar(250),  social_network varchar(250), keyword varchar(1000), uid int,  users int); ")
-      print("Copying Web Acquisition Channel data from S3 to  \n web_acquisition_channel2 ")
-      cursor.execute("COPY web_acquisition_channel2  FROM 's3://bibusuu/Web_Acquisition_Channel/'  CREDENTIALS 'aws_access_key_id=%s;aws_secret_access_key=%s' CSV;" % (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY))
-
-      print("Dropping Table  \n web_acquisition_channel")
-      cursor.execute("DROP TABLE if exists web_acquisition_channel;")
-      print("Renaming web_acquisition_channel2 to\n web_acquisition_channel ")
-      cursor.execute("ALTER TABLE web_acquisition_channel2 rename to web_acquisition_channel")
-
-      conn.commit()
-      conn.close()
+    else:
+        print('No Rows Found')
 
 
+def import_redshift():
+    conn_string = "dbname=%s port=%s user=%s password=%s host=%s" % (
+        RED_USER, RED_PORT, RED_USER, RED_PASSWORD, RED_HOST)
+    print("Connecting to database\n        ->%s" % (conn_string))
+    conn = psycopg2.connect(conn_string)
 
-  else:
-    print('No Rows Found')
+    cursor = conn.cursor()
+    # Update the redshift table with the new results
+
+    print("Deleting old table web_acquisition_channel2")
+    cursor.execute("drop table if exists web_acquisition_channel2;")
+    print("Creating new table \n web_acquisition_channel2 ")
+    cursor.execute("create table web_acquisition_channel2( date varchar(20), channel_grouping varchar(250), source_medium varchar(250), campaign varchar(250),  social_network varchar(250), keyword varchar(1000), uid int,  users int); ")
+    print("Copying Web Acquisition Channel data from S3 to  \n web_acquisition_channel2 ")
+    cursor.execute("COPY web_acquisition_channel2  FROM 's3://bibusuu/Web_Acquisition_Channel/'  CREDENTIALS 'aws_access_key_id=%s;aws_secret_access_key=%s' trimblanks removequotes delimiter as '\t';" % (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY))
+
+    print("Dropping Table  \n web_acquisition_channel")
+    cursor.execute("DROP TABLE if exists web_acquisition_channel;")
+    print("Aggregating web_acquisition_channel")
+    cursor.execute("create table web_acquisition_channel as select date(concat(concat(concat(concat(substring(date,0,5),'-'), substring(date,5,2)),'-'), substring(date,7,2))) as date, replace(regexp_substr(source_medium,'^.*/'),' /', '') as source, case when replace(regexp_substr(source_medium,'/.*'),'/ ', '') = '(not set)' then null else replace(regexp_substr(source_medium,'/.*'),'/ ', '') end as medium, case when campaign = '(not set)' then null else campaign end as campaign, case when social_network = '(not set)' then null else social_network end as social_network, case when keyword = '(not set)' then null else keyword end as keyword, uid::int as uid from web_acquisition_channel2;")
+    print("Dropping Staging Table  \n web_acquisition_channel2")
+    cursor.execute("DROP TABLE if exists web_acquisition_channel2;")
+    cursor.execute("DROP TABLE if exists web_acquisition_channel_registration;")
+    print("Aggregating web_acquisition_channel_registration")
+    cursor.execute("create table web_acquisition_channel_registration as select distinct bu.uid,  first_value(source) over (partition by bu.uid order by date asc rows between unbounded preceding and unbounded following) as source, first_value(medium) over (partition by bu.uid order by date asc rows between unbounded preceding and unbounded following) as medium, first_value(campaign) over (partition by bu.uid order by date asc rows between unbounded preceding and unbounded following) as campaign, first_value(social_network) over (partition by bu.uid order by date asc rows between unbounded preceding and unbounded following) as social_network, first_value(keyword) over (partition by bu.uid order by date asc rows between unbounded preceding and unbounded following) as keyword  from web_acquisition_channel acquisition inner join bs_users bu on bu.uid = acquisition.uid and date((TIMESTAMP 'epoch' + bu.created * INTERVAL '1 Second ')) = acquisition.date;")
+
+    conn.commit()
+    conn.close()
 
 
 if __name__ == '__main__':
-  main(sys.argv)
+    main(sys.argv)
